@@ -1,51 +1,59 @@
-
 import pandas as pd
 
-# Example dataframe
-data = {
-    'filename': ['file1', 'file1', 'file1', 'file2', 'file2'],
-    'page': [1, 2, 3, 1, 2],
-    'class': ['A', 'A', 'B', 'B', 'C'],
-    'flag': [1, 1, -1, -1, 1]
-}
-df = pd.DataFrame(data)
+# Assuming 'df' is your DataFrame
+def process_pages(df):
+    # Sort pages for each file
+    df = df.sort_values(['filename', 'page'])
 
-def process_pages(group):
-    pages = sorted(group['page'])
-    result = []
-    i = 0
-    while i < len(pages):
-        current_page = pages[i]
-        current_flag = group.loc[group['page'] == current_page, 'flag'].values[0]
+    # Loop through each unique file
+    for filename in df['filename'].unique():
+        file_df = df[df['filename'] == filename].reset_index(drop=True)
         
-        if current_flag == +1:
-            # Check the next 30 pages
-            found_flag = False
-            for j in range(i + 1, min(i + 31, len(pages))):
-                next_flag = group.loc[group['page'] == pages[j], 'flag'].values[0]
-                if next_flag in [+1, -1]:
-                    # Append pages up to this point
-                    result.extend(pages[i:j + 1])
-                    i = j
-                    found_flag = True
-                    break
+        i = 0
+        while i < len(file_df):
+            current_flag = file_df.loc[i, 'flag']
             
-            if not found_flag:
-                # Append next 5 pages if no flag is found
-                result.extend(pages[i:i + 5])
-                i += 5
+            if current_flag == +1:
+                # Search next 30 pages for +1 or -1
+                found = False
+                for j in range(i + 1, min(i + 31, len(file_df))):
+                    if file_df.loc[j, 'flag'] in [+1, -1]:
+                        found = True
+                        file_df.loc[i:j+1, 'class'] = 'pn'  # Update 'class' for pages i to j
+                        i = j + 1  # Move to the next page after the found one
+                        break
+                
+                # If no flag found, update class for next 5 pages
+                if not found:
+                    file_df.loc[i:i + 4, 'class'] = 'pn'
+                    i += 5  # Move to the page after 5
 
-        elif current_flag == -1:
-            # Remove until +1 is found
-            for j in range(i + 1, len(pages)):
-                next_flag = group.loc[group['page'] == pages[j], 'flag'].values[0]
-                if next_flag == +1:
-                    i = j - 1  # Start next loop from this page
-                    break
-            i += 1
-        else:
-            i += 1
-    return result
+            elif current_flag == -1:
+                # Remove 'pn' from class until +1 found
+                file_df.loc[i, 'class'] = ''  # Remove 'pn' from current page
+                for j in range(i + 1, len(file_df)):
+                    if file_df.loc[j, 'flag'] == +1:
+                        i = j  # Start from the next page where +1 is found
+                        break
+                    file_df.loc[j, 'class'] = ''  # Remove 'pn' until +1 is found
+                else:
+                    i = len(file_df)  # End loop if +1 isn't found
+                
+            else:
+                i += 1  # Move to the next page if flag is neither +1 nor -1
 
-# Group by filename and process each group
-df['result'] = df.groupby('filename').apply(lambda x: process_pages(x)).explode().reset_index(drop=True)
+        # Update the main dataframe with the processed data
+        df.update(file_df)
+
+    return df
+
+# Example usage:
+df = pd.DataFrame({
+    'filename': ['file1'] * 10,
+    'page': range(1, 11),
+    'class': [''] * 10,
+    'flag': [1, 0, 0, -1, 0, 1, 0, 0, -1, 0]
+})
+
+df = process_pages(df)
+print(df)
